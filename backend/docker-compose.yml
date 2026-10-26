@@ -1,0 +1,68 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-attendance-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - APP_ORIGIN=http://localhost:3000
+      - MONGODB_URI=mongodb://mongo:27017/smart_attendance?directConnection=true
+      - REDIS_URL=redis://redis:6379
+      - ACCESS_TOKEN_SECRET=smart_attendance_access_super_secret_key_32chars_min!
+      - REFRESH_TOKEN_SECRET=smart_attendance_refresh_super_secret_key_32chars_min!
+      - FACE_PROVIDER=mock
+      - BIOMETRIC_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - LOG_LEVEL=info
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - attendance-net
+
+  mongo:
+    image: mongo:7.0
+    container_name: smart-attendance-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - attendance-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: smart-attendance-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - attendance-net
+
+volumes:
+  mongo-data:
+  redis-data:
+
+networks:
+  attendance-net:
+    driver: bridge

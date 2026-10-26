@@ -1,0 +1,71 @@
+# Root .gitignore for Smart College Attendance Platform
+
+# Dependencies
+**/node_modules/
+.pnp
+.pnp.js
+
+# Environment variables & secrets (CRITICAL: Never commit to GitHub)
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+**/.env*.local
+*.env
+*.env.*
+!**/.env.example
+
+# Sensitive credentials, private keys & SSL certificates
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+
+# Next.js, Turbopack & build outputs
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/.turbo/
+
+# Logs and runtime dumps
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Biometric & temporary upload artifacts
+**/uploads/
+**/temp/
+**/tmp/
+*.tmp
+**/face-templates/
+**/biometric-cache/
+
+# Test coverage
+**/coverage/
+**/.nyc_output/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local databases & Docker persistence
+**/mongo-data/
+docker-compose.override.yml
