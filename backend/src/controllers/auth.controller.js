@@ -123,3 +123,179 @@ export async function me(req, res) {
 
   res.json({ success: true, data: user, requestId: req.requestId });
 }
+
+export async function registerCollege(req, res) {
+  const College = (await import("../models/College.js")).default;
+  const AuditLog = (await import("../models/AuditLog.js")).default;
+  const {
+    collegeName,
+    tenantCode,
+    domain,
+    contactEmail,
+    adminFirstName,
+    adminLastName,
+    adminEmail,
+    password,
+  } = req.body;
+
+  const upperCode = tenantCode.toUpperCase().trim();
+  const existingCollege = await College.findOne({
+    $or: [{ tenantCode: upperCode }, ...(domain ? [{ domain: domain.toLowerCase().trim() }] : [])],
+  });
+  if (existingCollege) {
+    throw AppError.conflict("A college with this tenant code or domain already exists");
+  }
+
+  const existingUser = await User.findOne({ email: adminEmail.toLowerCase().trim() });
+  if (existingUser) {
+    throw AppError.conflict("A user with this administrator email already exists");
+  }
+
+  const college = await College.create({
+    name: collegeName.trim(),
+    tenantCode: upperCode,
+    domain: domain ? domain.toLowerCase().trim() : undefined,
+    contactEmail: contactEmail ? contactEmail.toLowerCase().trim() : adminEmail.toLowerCase().trim(),
+    status: "active",
+  });
+
+  const hashedPassword = await authService.hashPassword(password);
+  const user = await User.create({
+    email: adminEmail.toLowerCase().trim(),
+    hashedPassword,
+    role: "collegeAdmin",
+    collegeId: college._id,
+    profile: {
+      firstName: adminFirstName.trim(),
+      lastName: adminLastName.trim(),
+    },
+    accountStatus: "active",
+    emailVerified: true,
+  });
+
+  const { accessToken, refreshToken } = await authService.issueTokensForUser({
+    user,
+    userAgent: req.headers["user-agent"],
+    ipAddress: req.ip,
+  });
+
+  res.cookie("refreshToken", refreshToken, COOKIE_OPTIONS);
+
+  await AuditLog.create({
+    actor: user._id,
+    action: "college.created",
+    targetType: "College",
+    targetId: college._id.toString(),
+    collegeId: college._id,
+    requestId: req.requestId,
+    metadata: { selfRegistered: true },
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      college,
+      user: {
+        _id: user._id,
+        email: user.email,
+        role: user.role,
+        collegeId: college._id,
+        profile: user.profile,
+        accountStatus: user.accountStatus,
+      },
+      accessToken,
+    },
+    requestId: req.requestId,
+  });
+}
+
+export async function registerStudent(req, res) {
+  const College = (await import("../models/College.js")).default;
+  const AuditLog = (await import("../models/AuditLog.js")).default;
+  const {
+    collegeId,
+    firstName,
+    lastName,
+    email,
+    password,
+    studentId,
+    phone,
+  } = req.body;
+
+  const college = await College.findById(collegeId);
+  if (!college || college.status !== "active") {
+    throw AppError.badRequest("Selected college is invalid or not active");
+  }
+
+  const existingUser = await User.findOne({
+    email: email.toLowerCase().trim(),
+    collegeId,
+  });
+  if (existingUser) {
+    throw AppError.conflict("A student with this email already exists in this college");
+  }
+
+  const hashedPassword = await authService.hashPassword(password);
+  const user = await User.create({
+    email: email.toLowerCase().trim(),
+    hashedPassword,
+    role: "student",
+    collegeId,
+    profile: {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      studentId: studentId?.trim(),
+      phone: phone?.trim(),
+    },
+    accountStatus: "active",
+    emailVerified: true,
+  });
+
+  const { accessToken, refreshToken } = await authService.issueTokensForUser({
+    user,
+    userAgent: req.headers["user-agent"],
+    ipAddress: req.ip,
+  });
+
+  res.cookie("refreshToken", refreshToken, COOKIE_OPTIONS);
+
+  await AuditLog.create({
+    actor: user._id,
+    action: "user.created",
+    targetType: "User",
+    targetId: user._id.toString(),
+    collegeId,
+    requestId: req.requestId,
+    metadata: { selfRegistered: true, role: "student" },
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      user: {
+        _id: user._id,
+        email: user.email,
+        role: user.role,
+        collegeId: user.collegeId,
+        profile: user.profile,
+        accountStatus: user.accountStatus,
+      },
+      accessToken,
+    },
+    requestId: req.requestId,
+  });
+}
+
+export async function getPublicColleges(req, res) {
+  const College = (await import("../models/College.js")).default;
+  const colleges = await College.find({ status: "active" })
+    .select("_id name shortName tenantCode domain settings")
+    .sort("name")
+    .lean();
+
+  res.json({
+    success: true,
+    data: colleges,
+    requestId: req.requestId,
+  });
+}

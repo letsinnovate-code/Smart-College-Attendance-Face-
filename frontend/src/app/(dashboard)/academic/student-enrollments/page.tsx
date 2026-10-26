@@ -40,19 +40,32 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate } from '@/lib/utils';
 
-const enrollSchema = z.object({
+const existingSchema = z.object({
   studentId: z.string().min(1, 'Student is required'),
   classId: z.string().min(1, 'Class section is required'),
   rollNumber: z.string().optional(),
 });
 
-type EnrollFormData = z.infer<typeof enrollSchema>;
+const newStudentSchema = z.object({
+  firstName: z.string().min(1, 'First name is required'),
+  lastName: z.string().min(1, 'Last name is required'),
+  email: z.string().email('Valid email is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  studentId: z.string().min(1, 'Student ID / Roll code is required'),
+  classId: z.string().min(1, 'Class section is required'),
+  rollNumber: z.string().optional(),
+});
+
+type ExistingFormData = z.infer<typeof existingSchema>;
+type NewStudentFormData = z.infer<typeof newStudentSchema>;
 
 export default function StudentEnrollmentsPage() {
   const queryClient = useQueryClient();
   const [selectedClassFilter, setSelectedClassFilter] = useState('');
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [enrollMode, setEnrollMode] = useState<'existing' | 'new'>('existing');
+  const [isCreatingNewStudent, setIsCreatingNewStudent] = useState(false);
 
   // Student Enrollments Query
   const { data: enrollmentsData, isLoading, error, refetch } = useQuery<ApiPaginatedResponse<StudentEnrollment>>({
@@ -80,12 +93,30 @@ export default function StudentEnrollmentsPage() {
   const studentsList = studentsData?.data || [];
   const classesList = classesData?.data || [];
 
+  const existingForm = useForm<ExistingFormData>({
+    resolver: zodResolver(existingSchema),
+    defaultValues: { studentId: '', classId: '', rollNumber: '' },
+  });
+
+  const newForm = useForm<NewStudentFormData>({
+    resolver: zodResolver(newStudentSchema),
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: 'StudentPass123!',
+      studentId: '',
+      classId: '',
+      rollNumber: '',
+    },
+  });
+
   const enrollMutation = useMutation({
-    mutationFn: (formData: EnrollFormData) => apiClient.post('/academic/student-enrollments', formData),
+    mutationFn: (formData: ExistingFormData) => apiClient.post('/academic/student-enrollments', formData),
     onSuccess: () => {
       toast.success('Student enrolled into class successfully');
       setIsModalOpen(false);
-      form.reset();
+      existingForm.reset();
       queryClient.invalidateQueries({ queryKey: ['academic-student-enrollments'] });
     },
     onError: (err: any) => {
@@ -105,22 +136,64 @@ export default function StudentEnrollmentsPage() {
     },
   });
 
-  const form = useForm<EnrollFormData>({
-    resolver: zodResolver(enrollSchema),
-    defaultValues: { studentId: '', classId: '', rollNumber: '' },
-  });
-
   const handleOpenCreate = () => {
-    form.reset({
+    existingForm.reset({
       studentId: studentsList[0]?._id || '',
       classId: classesList[0]?._id || '',
       rollNumber: '',
     });
+    newForm.reset({
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: 'StudentPass123!',
+      studentId: '',
+      classId: classesList[0]?._id || '',
+      rollNumber: '',
+    });
+    setEnrollMode('existing');
     setIsModalOpen(true);
   };
 
-  const onSubmit = (formData: EnrollFormData) => {
+  const onSubmitExisting = (formData: ExistingFormData) => {
     enrollMutation.mutate(formData);
+  };
+
+  const onSubmitNew = async (formData: NewStudentFormData) => {
+    setIsCreatingNewStudent(true);
+    try {
+      // 1. Create the student user account
+      const userRes: any = await apiClient.post('/users', {
+        email: formData.email,
+        password: formData.password,
+        role: 'student',
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        studentId: formData.studentId,
+      });
+
+      const newUserId = userRes?.data?._id || userRes?._id;
+      if (!newUserId) {
+        throw new Error('Student account created but no identifier was returned.');
+      }
+
+      // 2. Enroll student into class section
+      await apiClient.post('/academic/student-enrollments', {
+        studentId: newUserId,
+        classId: formData.classId,
+        rollNumber: formData.rollNumber || formData.studentId,
+      });
+
+      toast.success(`Student ${formData.firstName} ${formData.lastName} created and enrolled!`);
+      setIsModalOpen(false);
+      newForm.reset();
+      queryClient.invalidateQueries({ queryKey: ['academic-student-enrollments'] });
+      queryClient.invalidateQueries({ queryKey: ['users-students-list'] });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create and enroll student');
+    } finally {
+      setIsCreatingNewStudent(false);
+    }
   };
 
   const enrollments = (enrollmentsData?.data || []).filter((e) => {
@@ -128,7 +201,7 @@ export default function StudentEnrollmentsPage() {
     const name = student ? `${student.profile?.firstName || ''} ${student.profile?.lastName || ''}`.trim() : '';
     const matchSearch =
       name.toLowerCase().includes(search.toLowerCase()) ||
-      student?.email.toLowerCase().includes(search.toLowerCase()) ||
+      student?.email?.toLowerCase().includes(search.toLowerCase()) ||
       e.rollNumber?.toLowerCase().includes(search.toLowerCase());
     return search ? matchSearch : true;
   });
@@ -289,63 +362,168 @@ export default function StudentEnrollmentsPage() {
           <DialogTitle>Enroll Student into Academic Class</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Student <span className="text-rose-500">*</span>
-            </label>
-            <select
-              {...form.register('studentId')}
-              className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select student...</option>
-              {studentsList.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {s.profile?.firstName} {s.profile?.lastName} ({s.email})
-                </option>
-              ))}
-            </select>
-            {form.formState.errors.studentId && (
-              <p className="text-[11px] text-rose-500">{form.formState.errors.studentId.message}</p>
-            )}
-          </div>
+        {/* Toggle Mode Segmented Control */}
+        <div className="flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => setEnrollMode('existing')}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
+              enrollMode === 'existing'
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            Existing Student Directory
+          </button>
+          <button
+            type="button"
+            onClick={() => setEnrollMode('new')}
+            className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-all ${
+              enrollMode === 'new'
+                ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            + Register & Enroll New Student
+          </button>
+        </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Academic Class Section <span className="text-rose-500">*</span>
-            </label>
-            <select
-              {...form.register('classId')}
-              className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            >
-              <option value="">Select class section...</option>
-              {classesList.map((c) => (
-                <option key={c._id} value={c._id}>
-                  Section {c.section} (Sem {c.semester}, {c.academicYear})
-                </option>
-              ))}
-            </select>
-            {form.formState.errors.classId && (
-              <p className="text-[11px] text-rose-500">{form.formState.errors.classId.message}</p>
-            )}
-          </div>
+        {enrollMode === 'existing' ? (
+          <form onSubmit={existingForm.handleSubmit(onSubmitExisting)} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Student <span className="text-rose-500">*</span>
+              </label>
+              <select
+                {...existingForm.register('studentId')}
+                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Select student...</option>
+                {studentsList.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.profile?.firstName} {s.profile?.lastName} ({s.email})
+                  </option>
+                ))}
+              </select>
+              {existingForm.formState.errors.studentId && (
+                <p className="text-[11px] text-rose-500">{existingForm.formState.errors.studentId.message}</p>
+              )}
+            </div>
 
-          <Input
-            label="Roll Number / Class Rank"
-            placeholder="e.g. 01, 104, CS-24-001"
-            error={form.formState.errors.rollNumber?.message}
-            {...form.register('rollNumber')}
-          />
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Academic Class Section <span className="text-rose-500">*</span>
+              </label>
+              <select
+                {...existingForm.register('classId')}
+                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Select class section...</option>
+                {classesList.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    Section {c.section} (Sem {c.semester}, {c.academicYear})
+                  </option>
+                ))}
+              </select>
+              {existingForm.formState.errors.classId && (
+                <p className="text-[11px] text-rose-500">{existingForm.formState.errors.classId.message}</p>
+              )}
+            </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={enrollMutation.isPending}>
-              Enroll Student
-            </Button>
-          </DialogFooter>
-        </form>
+            <Input
+              label="Roll Number / Class Rank"
+              placeholder="e.g. 01, 104, CS-24-001"
+              error={existingForm.formState.errors.rollNumber?.message}
+              {...existingForm.register('rollNumber')}
+            />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={enrollMutation.isPending}>
+                Enroll Student
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <form onSubmit={newForm.handleSubmit(onSubmitNew)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="First Name"
+                placeholder="e.g. Alex"
+                error={newForm.formState.errors.firstName?.message}
+                {...newForm.register('firstName')}
+              />
+              <Input
+                label="Last Name"
+                placeholder="e.g. Rivera"
+                error={newForm.formState.errors.lastName?.message}
+                {...newForm.register('lastName')}
+              />
+            </div>
+
+            <Input
+              label="Student Institutional Email"
+              type="email"
+              placeholder="alex.rivera@college.edu"
+              error={newForm.formState.errors.email?.message}
+              {...newForm.register('email')}
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Student ID / Code"
+                placeholder="e.g. CS2024-042"
+                error={newForm.formState.errors.studentId?.message}
+                {...newForm.register('studentId')}
+              />
+              <Input
+                label="Roll Number in Class"
+                placeholder="e.g. 42"
+                error={newForm.formState.errors.rollNumber?.message}
+                {...newForm.register('rollNumber')}
+              />
+            </div>
+
+            <Input
+              label="Initial Password"
+              type="password"
+              placeholder="Min 8 characters"
+              error={newForm.formState.errors.password?.message}
+              {...newForm.register('password')}
+            />
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Assign Class Section <span className="text-rose-500">*</span>
+              </label>
+              <select
+                {...newForm.register('classId')}
+                className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Select class section...</option>
+                {classesList.map((c) => (
+                  <option key={c._id} value={c._id}>
+                    Section {c.section} (Sem {c.semester}, {c.academicYear})
+                  </option>
+                ))}
+              </select>
+              {newForm.formState.errors.classId && (
+                <p className="text-[11px] text-rose-500">{newForm.formState.errors.classId.message}</p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={isCreatingNewStudent}>
+                Create & Enroll Student
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </Dialog>
     </div>
   );

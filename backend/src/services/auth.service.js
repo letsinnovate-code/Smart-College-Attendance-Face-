@@ -41,6 +41,29 @@ async function signRefreshToken(userId) {
   return raw; // We sign it ourselves; just return the raw token (hash stored in DB)
 }
 
+export async function issueTokensForUser({ user, userAgent, ipAddress }) {
+  const accessToken = await signAccessToken(
+    user._id.toString(),
+    user.role,
+    user.collegeId?.toString(),
+  );
+  const rawRefreshToken = generateSecureToken(48);
+  const tokenHash = hashToken(rawRefreshToken);
+  const ttlMs = ms(env.REFRESH_TOKEN_TTL);
+
+  await RefreshSession.create({
+    userId: user._id,
+    collegeId: user.collegeId,
+    tokenHash,
+    userAgent,
+    ipAddress,
+    issuedAt: new Date(),
+    expiresAt: new Date(Date.now() + ttlMs),
+  });
+
+  return { accessToken, refreshToken: rawRefreshToken };
+}
+
 // ----- Core auth functions -----
 
 export async function login({

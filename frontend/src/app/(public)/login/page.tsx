@@ -28,6 +28,7 @@ export default function LoginPage() {
     register,
     handleSubmit,
     setValue,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -146,6 +147,27 @@ export default function LoginPage() {
               >
                 <Camera className="h-3 w-3 text-amber-600" /> Student
               </button>
+            </div>
+          </div>
+
+          {/* Registration Links */}
+          <div className="mt-5 border-t border-slate-100 pt-4 text-center text-xs text-slate-500 dark:border-slate-800">
+            <p>
+              New Institution?{' '}
+              <Link href="/register-college" className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+                Register Your College
+              </Link>
+            </p>
+            <p className="mt-1">
+              New Student?{' '}
+              <Link href="/register-student" className="font-semibold text-emerald-600 hover:underline dark:text-emerald-400">
+                Enroll / Register Here
+              </Link>
+            </p>
+            <div className="mt-3">
+              <Link href="/" className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                ← Return to Homepage
+              </Link>
             </div>
           </div>
         </div>

@@ -40,7 +40,40 @@ const resetPasswordSchema = z.object({
     .regex(/[a-z]/, "Must contain a lowercase letter")
     .regex(/[0-9]/, "Must contain a number"),
 });
+const registerCollegeSchema = z.object({
+  collegeName: z.string().min(2).max(200),
+  tenantCode: z.string().min(2).max(10),
+  domain: z.string().optional(),
+  contactEmail: z.string().email().optional(),
+  adminFirstName: z.string().min(1).max(100),
+  adminLastName: z.string().min(1).max(100),
+  adminEmail: z.string().email(),
+  password: z.string().min(8).max(128),
+});
 
+const registerStudentSchema = z.object({
+  collegeId: z.string().min(1),
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
+  studentId: z.string().optional(),
+  phone: z.string().optional(),
+});
+
+router.get("/colleges", asyncHandler(authController.getPublicColleges));
+router.post(
+  "/register-college",
+  authLimiter,
+  validate(registerCollegeSchema),
+  asyncHandler(authController.registerCollege),
+);
+router.post(
+  "/register-student",
+  authLimiter,
+  validate(registerStudentSchema),
+  asyncHandler(authController.registerStudent),
+);
 /**
  * @swagger
  * /auth/login:
