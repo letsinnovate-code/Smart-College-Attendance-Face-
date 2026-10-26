@@ -18,8 +18,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-50 text-slate-900 font-sans dark:bg-slate-950 dark:text-slate-100">
+    <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <body className="min-h-full bg-slate-50 text-slate-900 font-sans dark:bg-slate-950 dark:text-slate-100" suppressHydrationWarning>
         <QueryProvider>
           <AuthProvider>
             {children}
